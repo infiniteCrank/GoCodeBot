@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoLang Chatbot</title>
+    <script src="main.js" defer></script>
+    <style>
+        /* Add basic styling for interaction */
+        #chat-container {
+            max-width: 600px;
+            margin: 20px auto;
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        #messages {
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #fff;
+        }
+        .rating {
+            margin: 5px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <h1>GoLang Programming Chatbot</h1>
+    <div id="chat-container">
+        <div id="messages"></div>
+        <input type="text" id="query" placeholder="Type your question...">
+        <button id="send">Send</button>
+        
+        <!-- Feedback rating buttons -->
+        <div id="feedback" style="display: none;">
+            <h3>How would you rate the response?</h3>
+            <div class="rating">
+                <button onclick="submitFeedback(1)">1 Star</button>
+                <button onclick="submitFeedback(2)">2 Stars</button>
+                <button onclick="submitFeedback(3)">3 Stars</button>
+                <button onclick="submitFeedback(4)">4 Stars</button>
+                <button onclick="submitFeedback(5)">5 Stars</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
