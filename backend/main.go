@@ -28,7 +28,7 @@ var dataset []DataPoint
 
 func handleUserInput(query string) string {
 	// Load the expanded corpus
-	corpus, err := LoadCorpus("go_corpus.txt")
+	corpus, err := LoadCorpus("go_corpus.md")
 	if err != nil {
 		log.Fatal("Error loading corpus:", err)
 	}
