@@ -6,21 +6,27 @@ import (
 )
 
 // DataPoint represents a single entry in the dataset for KNN.
-// It contains a vector (representing its TF-IDF values) and the response associated with that entry.
+// It contains a vector (representing its TF-IDF values), the response associated with that entry, and the associated intent.
 type DataPoint struct {
 	Vector map[string]float64 // TF-IDF vector for the data point
 	Answer string             // The response associated with this data point
+	Intent string             // The identified intent of the data point (optional)
 }
 
 // EuclideanDistance calculates the Euclidean distance between two vectors.
-// It compares the similarities of two data points based on their TF-IDF vectors.
 func EuclideanDistance(vec1, vec2 map[string]float64) float64 {
 	var sum float64
 	// Iterate over all keys in vec1 to compute the distance
 	for key := range vec1 {
-		// If key exists in vec2, compute the squared difference, otherwise add the square of the value in vec1
+		// If key exists in vec2, compute the squared difference, otherwise treat vec2[key] as 0
 		diff := vec1[key] - vec2[key]
 		sum += diff * diff
+	}
+	// Include terms that are in vec2 but not in vec1
+	for key := range vec2 {
+		if _, exists := vec1[key]; !exists {
+			sum += vec2[key] * vec2[key]
+		}
 	}
 	return math.Sqrt(sum) // Return the square root of the sum of squared differences
 }
