@@ -73,6 +73,13 @@ func main() {
 		}
 	}()
 
+	// Set up a Go routine that runs at defined intervals to retrain based on feedback
+	go func() {
+		for range time.Tick(time.Hour) { // Adjust to your preferred interval
+			retrainModelBasedOnFeedback()
+		}
+	}()
+
 	router := mux.NewRouter()
 	router.HandleFunc("/ws", handleWebSocket)
 	router.HandleFunc("/train", handleTraining).Methods("POST")
@@ -80,6 +87,48 @@ func main() {
 
 	log.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func retrainModelBasedOnFeedback() {
+	log.Println("Retraining model based on collected feedback and interactions.")
+
+	// Fetch interaction logs from the database
+	rows, err := db.Query("SELECT query, response FROM interactions")
+	if err != nil {
+		log.Println("Error fetching interaction logs from database:", err)
+		return
+	}
+	defer rows.Close()
+
+	var feedbackCorpus []string
+	for rows.Next() {
+		var query, response string
+		if err := rows.Scan(&query, &response); err != nil {
+			log.Println("Error scanning interaction log:", err)
+			continue
+		}
+		// Prepare the feedback corpus
+		feedbackCorpus = append(feedbackCorpus, query, response)
+	}
+
+	// Load the existing corpus of training phrases
+	corpus, err := LoadCorpus("go_corpus.md")
+	if err != nil {
+		log.Fatal("Error loading corpus:", err)
+	}
+
+	// Combine the feedback corpus with the existing corpus
+	corpus = append(corpus, feedbackCorpus...)
+
+	// Create a new TF-IDF model based on the updated corpus
+	tfidf := NewTFIDF(corpus)
+
+	// Recalculate TF-IDF vectors for the dataset
+	for i := range dataset {
+		dataset[i].Vector = tfidf.CalculateVector(dataset[i].Answer) // Recalculate vectors for each existing dataset entry
+	}
+
+	log.Println("Model retraining completed successfully.")
 }
 
 // Load existing discovered intents from the database
@@ -264,12 +313,20 @@ func min(a, b int) int {
 	return b
 }
 
+// Validate new intents periodically
 func validateNewIntents() {
 	for intentKey, queries := range discoveredIntents {
-		if len(queries) > exampleThreshold { // Set a threshold for how many examples define a new intent
-			// Here you can automatically create a new intent with existing phrases
+		if len(queries) >= exampleThreshold { // Set a threshold for how many examples define a new intent
 			log.Println("New Intent Discovered:", intentKey, "with queries:", queries)
-			// Optionally, you may want to ask users about this new intent
+
+			// Automatically create the new intent with existing phrases
+			newIntent := Intent{Name: intentKey, TrainingPhrases: queries}
+			intents = append(intents, newIntent) // Add the new intent to the intent
+			// Persist the new intent to the database
+			persistDiscoveredIntent(intentKey, strings.Join(queries, ";"))
+
+			// Clear the discovered intent after saving
+			delete(discoveredIntents, intentKey)
 		}
 	}
 }
@@ -343,19 +400,3 @@ func cosineSimilarity(vec1, vec2 map[string]float64) float64 {
 
 	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB)) // Return cosine similarity
 }
-
-//set up a Go routine that runs at defined intervals to analyze the gathered data, adjust the corpus, and re-calculate the TF-IDF model
-// go func() {
-//     for range time.Tick(time.Hour) { // Adjust to your preferred interval
-//         retrainModelBasedOnFeedback()
-//     }
-// }()
-
-// func retrainModelBasedOnFeedback() {
-//     // Logic to fetch interaction_logs from the database
-//     // Implement your retraining logic here, possibly reloading the corpus
-
-//     // Example:
-//     // Analyze frequent queries and adjust the corpus
-//     log.Println("Retraining model based on collected feedback and interactions.")
-// }
