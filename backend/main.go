@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"log"
-	"math"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,9 +14,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Global variables
 var upgrader = websocket.Upgrader{}
-
-var discoveredIntents map[string][]string // Holds potential new intents and their associated phrases
+var discoveredIntents map[string][]string        // Holds potential new intents and their associated phrases
+var programmingTerms = make(map[string][]string) // Dynamically defined programming terms
 
 // Intent struct for intent classification
 type Intent struct {
@@ -26,6 +27,7 @@ type Intent struct {
 
 const exampleThreshold = 3
 
+// Predefined intents for the chatbot
 var intents = []Intent{
 	{
 		Name:            "greeting",
@@ -42,38 +44,75 @@ var intents = []Intent{
 	// Add more intents as needed...
 }
 
-var dataset []DataPoint
+var dataset []DataPoint // Collection of data points for KNN
 
-// Handle new training data
+// Structure for new training data
 type TrainingData struct {
 	Query  string `json:"query"`
 	Answer string `json:"answer"`
 }
 
+// Structure for user feedback
 type Feedback struct {
 	Query    string `json:"query"`
 	Response string `json:"response"`
 	Rating   int    `json:"rating"`
 }
 
-func main() {
+// Function to initialize programming terms dynamically from the corpus
+func initializeProgrammingTerms(corpus []string) {
+	for _, line := range corpus {
+		// Extract potential programming terms using regex heuristic
+		terms := extractProgrammingTerms(line)
+		for _, term := range terms {
+			// Add the term to the dictionary with a placeholder description
+			programmingTerms[term] = []string{"No description available yet."} // Placeholder
+		}
+	}
+}
 
+// Extract potential programming terms from a line of text
+func extractProgrammingTerms(text string) []string {
+	var terms []string
+
+	// Use regex to find capitalized words or common programming patterns
+	re := regexp.MustCompile(`\b([A-Z][a-zA-Z]*)\b`) // Match capitalized words (likely class names, etc.)
+	matches := re.FindAllString(text, -1)
+
+	for _, match := range matches {
+		terms = append(terms, match)
+	}
+
+	return terms
+}
+
+// Main entry point for the application
+func main() {
 	// Initialize discovered intents
 	discoveredIntents = make(map[string][]string)
 
-	connectDatabase()
+	connectDatabase() // Connect to the database
 
-	// Load any existing discovered intents from the database
+	// Load existing discovered intents from the database
 	loadDiscoveredIntents()
 
-	// Start the validation loop for new intents
+	// Load the existing corpus of training phrases
+	corpus, err := LoadCorpus("go_corpus.md")
+	if err != nil {
+		log.Fatal("Error loading corpus:", err)
+	}
+
+	// Dynamically initialize programming terms from the corpus
+	initializeProgrammingTerms(corpus)
+
+	// Start a goroutine to validate new intents periodically
 	go func() {
 		for range time.Tick(time.Minute) { // Check every minute
 			validateNewIntents()
 		}
 	}()
 
-	// Set up a Go routine that runs at defined intervals to retrain based on feedback
+	// Start a goroutine to retrain the model based on user feedback periodically
 	go func() {
 		for range time.Tick(time.Hour) { // Adjust to your preferred interval
 			retrainModelBasedOnFeedback()
@@ -81,14 +120,118 @@ func main() {
 	}()
 
 	router := mux.NewRouter()
-	router.HandleFunc("/ws", handleWebSocket)
-	router.HandleFunc("/train", handleTraining).Methods("POST")
-	http.Handle("/", http.FileServer(http.Dir("./frontend"))) // Serve static files
+	router.HandleFunc("/ws", handleWebSocket)                   // WebSocket connection handler
+	router.HandleFunc("/train", handleTraining).Methods("POST") // Training endpoint
+	http.Handle("/", http.FileServer(http.Dir("./frontend")))   // Serve static files
 
 	log.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
+// Validate new intents periodically
+func validateNewIntents() {
+	for intentKey, queries := range discoveredIntents {
+		if len(queries) >= exampleThreshold { // Set a threshold for how many examples define a new intent
+			log.Println("New Intent Discovered:", intentKey, "with queries:", queries)
+
+			// Automatically create the new intent with existing phrases
+			newIntent := Intent{Name: intentKey, TrainingPhrases: queries}
+			intents = append(intents, newIntent) // Add the new intent to the intent list
+			// Persist the new intent to the database
+			persistDiscoveredIntent(intentKey, strings.Join(queries, ";"))
+
+			// Clear the discovered intent after saving
+			delete(discoveredIntents, intentKey)
+		}
+	}
+}
+
+// Persist discovered intents into the database
+func persistDiscoveredIntent(intentName string, phrase string) {
+	_, err := db.Exec("INSERT INTO discovered_intents (intent_name, training_phrases) VALUES (?, ?) ON DUPLICATE KEY UPDATE training_phrases = CONCAT(training_phrases, ';', ?)", intentName, phrase, phrase)
+	if err != nil {
+		log.Println("Error saving discovered intent to database:", err)
+	}
+}
+
+// Handle new training data and retraining of the TF-IDF model
+func handleTraining(w http.ResponseWriter, r *http.Request) {
+	var data TrainingData
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Append the new training data to the dataset
+	dataset = append(dataset, DataPoint{Vector: nil, Answer: data.Answer})
+	retrainTFIDFModel()        // Refresh the model
+	saveTrainingDataToDB(data) // Persist the training data to the database
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// Load programming concepts from the corpus
+func loadCorpusConcepts(filename string) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var currentSection string
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "##") {
+			if currentSection != "" {
+				programmingTerms[currentSection] = []string{"Definition or description not explicitly detailed."}
+			}
+			currentSection = strings.TrimSpace(line[2:])
+		}
+	}
+	if currentSection != "" {
+		programmingTerms[currentSection] = []string{"Definition or description not explicitly detailed."}
+	}
+
+	return scanner.Err()
+}
+
+// Extract entities based on dictionary lookup
+func extractEntitiesAdvanced(query string) []string {
+	entities := make([]string, 0)
+	words := strings.Fields(strings.ToLower(query))
+
+	// Check each word in the query against the dynamically defined programming terms
+	for _, word := range words {
+		if relatedEntities, exists := programmingTerms[word]; exists {
+			entities = append(entities, word)               // Add the key term
+			entities = append(entities, relatedEntities...) // Add related terms
+		}
+	}
+	return entities
+}
+
+// Use regex to find programming constructs
+func extractEntitiesWithRegex(query string) []string {
+	var entities []string
+
+	// Example regex patterns for capturing common programming constructs
+	patterns := []string{
+		`(?i)\b(func|package|import|type|var)\b`, // Match Go keywords
+		`(?i)\b([A-Z][a-zA-Z]*)\b`,               // Match capitalized terms (e.g., struct names)
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindAllString(query, -1)
+		entities = append(entities, matches...)
+	}
+
+	return entities
+}
+
+// Retrain the model based on collected feedback and interactions
 func retrainModelBasedOnFeedback() {
 	log.Println("Retraining model based on collected feedback and interactions.")
 
@@ -125,7 +268,7 @@ func retrainModelBasedOnFeedback() {
 
 	// Recalculate TF-IDF vectors for the dataset
 	for i := range dataset {
-		dataset[i].Vector = tfidf.CalculateVector(dataset[i].Answer) // Recalculate vectors for each existing dataset entry
+		dataset[i].Vector = tfidf.CalculateVector(dataset[i].Answer) // Recalculate TF-IDF vectors
 	}
 
 	log.Println("Model retraining completed successfully.")
@@ -155,16 +298,16 @@ func loadDiscoveredIntents() {
 	}
 }
 
+// Handle user input and respond based on KNN and dynamic entities
 func handleUserInput(query string) string {
 	// Load the expanded corpus
 	corpus, err := LoadCorpus("go_corpus.md")
 	if err != nil {
 		log.Fatal("Error loading corpus:", err)
 	}
-	// Assuming dataset is loaded/predefined
 	// Create the TF-IDF model and calculate the query vector
-	tfidf := NewTFIDF(corpus) // Implement loadCorpus to retrieve your documents
-	queryVec := tfidf.CalculateVector(query)
+	tfidf := NewTFIDF(corpus)                // Create a new TF-IDF model
+	queryVec := tfidf.CalculateVector(query) // Calculate TF-IDF for the user query
 
 	// Get response using KNN
 	return KNN(queryVec, dataset, 3) // Adjust k as needed
@@ -191,21 +334,7 @@ func LoadCorpus(filename string) ([]string, error) {
 	return corpus, nil
 }
 
-// Function to handle new training data
-func handleTraining(w http.ResponseWriter, r *http.Request) {
-	var data TrainingData
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Add it to dataset and retrain
-	dataset = append(dataset, DataPoint{Vector: nil, Answer: data.Answer})
-	retrainTFIDFModel()        // Function implementation needed
-	saveTrainingDataToDB(data) // Persist to DB if needed
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
-}
-
+// Handle the websocket interaction for user queries
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -226,177 +355,82 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case "query":
 			query := msg["query"].(string)
 
-			// Classify user intent
-			intent := classifyIntent(query)
+			// Extract noun phrases and advanced entities from the query
+			nounPhrases := extractNounPhrases(query)
+			entities := extractEntitiesAdvanced(query)
 
-			if intent == "" { // Intent is not recognized
-				// Add the new query to discovered intents
-				aggregateDiscoveredIntents(query)
+			// Convert the query into a TF-IDF vector
+			corpus, err := LoadCorpus("go_corpus.md")
+			if err != nil {
+				log.Fatal("Error loading corpus:", err)
+			}
+			tfidf := NewTFIDF(corpus)                // Create a new TF-IDF model
+			queryVec := tfidf.CalculateVector(query) // Calculate TF-IDF for the user query
+
+			// Use KNN to get relevant responses
+			knnResponse := KNN(queryVec, dataset, 3) // Get KNN responses
+
+			// Prepare the final response
+			var finalResponse string
+
+			// Combine KNN response with recognized entities
+			if knnResponse != "" {
+				finalResponse = knnResponse
+				if len(entities) > 0 {
+					finalResponse += "\n\nRelated Topics: " + strings.Join(entities, ", ")
+				}
+			} else {
+				// If no KNN responses, generate responses based on noun phrases
+				finalResponse = generateResponseFromNounPhrases(nounPhrases)
 			}
 
-			var response string
-
-			// Respond based on classified intent
-			switch intent {
-			case "greeting":
-				response = "Bot: Hello! How can I assist you today?"
-			case "farewell":
-				response = "Bot: Goodbye! Have a great day!"
-			case "help":
-				// Get response using KNN for help queries
-				response = handleUserInput(query) // Get response from KNN
-			default:
-				response = handleUserInput(query) // General response fallback
-			}
-
-			// Send the response back to the client
-			err = conn.WriteJSON(map[string]string{"type": "response", "response": response})
+			// Send the final response back to the client
+			err = conn.WriteJSON(map[string]string{"type": "response", "response": finalResponse})
 			if err != nil {
 				log.Println("Error on write:", err)
 			}
 
-			// Log the interaction after generating a response.
-			saveInteraction(query, response) // Log the interaction with query and response.
-
-		case "feedback":
-			feedback := Feedback{
-				Query:    msg["query"].(string),
-				Response: msg["response"].(string),
-				Rating:   int(msg["rating"].(float64)),
-			}
-			saveFeedbackToDB(feedback)                                         // Persist to feedback table
-			logInteraction(feedback.Query, feedback.Response, feedback.Rating) // Log interaction
+			// Log the interaction
+			saveInteraction(query, finalResponse) // Log the interaction with query and response.
 		}
 	}
 }
 
-// Function to aggregate new intents discovered from user queries
-func aggregateDiscoveredIntents(query string) {
-	processedQuery := preprocessInput(query) // Preprocess input
+// Function to extract noun phrases
+func extractNounPhrases(query string) []string {
+	words := strings.Fields(strings.ToLower(query))
+	nounPhrases := make([]string, 0)
 
-	// Find a suitable cluster key for the query.
-	clusterKey := findClusterKey(processedQuery)
-
-	// Add the query to the corresponding discovered intent cluster.
-	if _, exists := discoveredIntents[clusterKey]; !exists {
-		discoveredIntents[clusterKey] = []string{} // Initialize if doesn't exists
-	}
-	discoveredIntents[clusterKey] = append(discoveredIntents[clusterKey], processedQuery) // Add the new query
-
-	// Persisting the new intent to the database
-	persistDiscoveredIntent(clusterKey, processedQuery)
-}
-
-// Function to find a cluster key based on a processed query
-func findClusterKey(query string) string {
-	// For simplicity, use the first few words as a basic key
-	words := strings.Fields(query)
-	if len(words) > 0 {
-		return strings.Join(words[:min(3, len(words))], "_") // Join the first three words as a key
-	}
-	return query // If no words, return the query itself
-}
-
-// Function to persist discovered intents into the database
-func persistDiscoveredIntent(intentName string, phrase string) {
-	_, err := db.Exec("INSERT INTO discovered_intents (intent_name, training_phrases) VALUES (?, ?) ON DUPLICATE KEY UPDATE training_phrases = CONCAT(training_phrases, ';', ?)", intentName, phrase, phrase)
-	if err != nil {
-		log.Println("Error saving discovered intent to database:", err)
-	}
-}
-
-// Helper function to return the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// Validate new intents periodically
-func validateNewIntents() {
-	for intentKey, queries := range discoveredIntents {
-		if len(queries) >= exampleThreshold { // Set a threshold for how many examples define a new intent
-			log.Println("New Intent Discovered:", intentKey, "with queries:", queries)
-
-			// Automatically create the new intent with existing phrases
-			newIntent := Intent{Name: intentKey, TrainingPhrases: queries}
-			intents = append(intents, newIntent) // Add the new intent to the intent
-			// Persist the new intent to the database
-			persistDiscoveredIntent(intentKey, strings.Join(queries, ";"))
-
-			// Clear the discovered intent after saving
-			delete(discoveredIntents, intentKey)
-		}
-	}
-}
-
-func saveFeedbackToDB(feedback Feedback) {
-	_, err := db.Exec("INSERT INTO feedback(query, response, rating) VALUES(?, ?, ?)", feedback.Query, feedback.Response, feedback.Rating)
-	if err != nil {
-		log.Println("Error saving feedback:", err)
-	}
-}
-
-// Function for intent classification
-func classifyIntent(query string) string {
-	preprocessedQuery := preprocessInput(query)
-
-	// Create a corpus from the intents' training phrases
-	corpus := []string{}
-	for _, intent := range intents {
-		corpus = append(corpus, intent.TrainingPhrases...)
-	}
-
-	// Calculate TF-IDF for input query
-	tf := NewTFIDF(corpus)
-	queryVec := tf.CalculateVector(preprocessedQuery)
-
-	bestIntent := ""
-	highestSimilarity := -1.0
-
-	// Classify query against intents
-	for _, intent := range intents {
-		for _, phrase := range intent.TrainingPhrases {
-			phraseVec := tf.CalculateVector(phrase)             // Calculate vector for the training phrase
-			similarity := cosineSimilarity(queryVec, phraseVec) // Compute cosine similarity
-
-			// Check for the best intent based on similarity
-			if similarity > highestSimilarity {
-				highestSimilarity = similarity
-				bestIntent = intent.Name
-			}
+	for _, word := range words {
+		if isProgrammingTerm(word) {
+			nounPhrases = append(nounPhrases, word)
 		}
 	}
 
-	return bestIntent
+	return nounPhrases
 }
 
-// Preprocess the user input (lowercase, etc.)
-func preprocessInput(input string) string {
-	return strings.ToLower(input)
+// Function to check if a word is a recognized programming term
+func isProgrammingTerm(word string) bool {
+	// Check against dynamically loaded programmingTerms map
+	if _, exists := programmingTerms[word]; exists {
+		return true
+	}
+	return false
 }
 
-// Cosine similarity function (reuse or implement below if not defined elsewhere)
-func cosineSimilarity(vec1, vec2 map[string]float64) float64 {
-	dotProduct := 0.0
-	normA := 0.0
-	normB := 0.0
-
-	for key, val1 := range vec1 {
-		if val2, found := vec2[key]; found {
-			dotProduct += val1 * val2
+// Function to generate responses based on extracted noun phrases
+func generateResponseFromNounPhrases(nounPhrases []string) string {
+	var responses []string
+	for _, nounPhrase := range nounPhrases {
+		if len(programmingTerms[nounPhrase]) > 0 {
+			responses = append(responses, programmingTerms[nounPhrase][0]) // Access the first description for that term
+		} else {
+			responses = append(responses, "I'm sorry, but I do not have information on: "+nounPhrase)
 		}
-		normA += val1 * val1
 	}
-
-	for _, val2 := range vec2 {
-		normB += val2 * val2
+	if len(responses) > 0 {
+		return strings.Join(responses, "\n") // Join the responses for clarity
 	}
-
-	if normA == 0 || normB == 0 {
-		return 0
-	}
-
-	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB)) // Return cosine similarity
+	return "Sorry, I couldn't find relevant information."
 }
