@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 var upgrader = websocket.Upgrader{}
 
 var discoveredIntents map[string][]string // Holds potential new intents and their associated phrases
+
+var programmingTerms = make(map[string][]string) // Dynamically defined programming terms
 
 // Intent struct for intent classification
 type Intent struct {
@@ -66,6 +69,18 @@ func main() {
 	// Load any existing discovered intents from the database
 	loadDiscoveredIntents()
 
+	// Load programming concepts from the corpus
+	loadCorpusConcepts("go_corpus.md")
+
+	// Load the existing corpus of training phrases
+	corpus, err := LoadCorpus("go_corpus.md")
+	if err != nil {
+		log.Fatal("Error loading corpus:", err)
+	}
+
+	// Dynamically initialize programming terms from the corpus
+	initializeProgrammingTerms(corpus)
+
 	// Start the validation loop for new intents
 	go func() {
 		for range time.Tick(time.Minute) { // Check every minute
@@ -87,6 +102,113 @@ func main() {
 
 	log.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+// Function to initialize programming terms dynamically from the corpus
+func initializeProgrammingTerms(corpus []string) {
+	for _, line := range corpus {
+		// Extract potential programming terms using regex heuristic
+		terms := extractProgrammingTerms(line)
+		for _, term := range terms {
+			// Add the term to the dictionary with a placeholder description
+			programmingTerms[term] = []string{"No description available yet."} // Placeholder
+		}
+	}
+}
+
+// Extract potential programming terms from a line of text
+func extractProgrammingTerms(text string) []string {
+	var terms []string
+
+	// Use regex to find capitalized words or common programming patterns
+	re := regexp.MustCompile(`\b([A-Z][a-zA-Z]*)\b`) // Match capitalized words (likely class names, etc.)
+	matches := re.FindAllString(text, -1)
+
+	terms = append(terms, matches...)
+
+	return terms
+}
+
+// Load programming concepts from the corpus
+func loadCorpusConcepts(filename string) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var currentSection string
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "##") {
+			if currentSection != "" {
+				programmingTerms[currentSection] = []string{"Definition or description not explicitly detailed."}
+			}
+			currentSection = strings.TrimSpace(line[2:])
+		}
+	}
+	if currentSection != "" {
+		programmingTerms[currentSection] = []string{"Definition or description not explicitly detailed."}
+	}
+
+	return scanner.Err()
+}
+
+// Extract entities based on dictionary lookup
+func extractEntitiesAdvanced(query string) []string {
+	entities := make([]string, 0)
+	words := strings.Fields(strings.ToLower(query))
+
+	// Check each word in the query against the dynamically defined programming terms
+	for _, word := range words {
+		if relatedEntities, exists := programmingTerms[word]; exists {
+			entities = append(entities, word)               // Add the key term
+			entities = append(entities, relatedEntities...) // Add related terms
+		}
+	}
+	return entities
+}
+
+// Function to extract noun phrases
+func extractNounPhrases(query string) []string {
+	words := strings.Fields(strings.ToLower(query))
+	nounPhrases := make([]string, 0)
+
+	for _, word := range words {
+		if isProgrammingTerm(word) {
+			nounPhrases = append(nounPhrases, word)
+		}
+	}
+
+	return nounPhrases
+}
+
+// Function to check if a word is a recognized programming term
+func isProgrammingTerm(word string) bool {
+	// Check against dynamically loaded programmingTerms map
+	if _, exists := programmingTerms[word]; exists {
+		return true
+	}
+	return false
+}
+
+// Function to generate responses based on extracted noun phrases
+func generateResponseFromNounPhrases(nounPhrases []string) string {
+	var responses []string
+	for _, nounPhrase := range nounPhrases {
+		if len(programmingTerms[nounPhrase]) > 0 {
+			responses = append(responses, programmingTerms[nounPhrase][0]) // Access the first description for that term
+		} else {
+			responses = append(responses, "I'm sorry, but I do not have information on: "+nounPhrase)
+		}
+	}
+	if len(responses) > 0 {
+		return strings.Join(responses, "\n") // Join the responses for clarity
+	}
+	return "Sorry, I couldn't find relevant information."
 }
 
 func retrainModelBasedOnFeedback() {
@@ -206,6 +328,7 @@ func handleTraining(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
+// Handle the websocket interaction for user queries
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -226,6 +349,27 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case "query":
 			query := msg["query"].(string)
 
+			// Extract noun phrases and advanced entities from the query
+			nounPhrases := extractNounPhrases(query)
+			entities := extractEntitiesAdvanced(query)
+
+			// Use KNN to get relevant responses
+			knnResponse := handleUserInput(query) // Get response from KNN
+
+			// Prepare the final response
+			var finalResponse string
+
+			// Combine KNN response with recognized entities
+			if knnResponse != "" {
+				finalResponse = knnResponse
+				if len(entities) > 0 {
+					finalResponse += "\n\nRelated Topics: " + strings.Join(entities, ", ")
+				}
+			} else {
+				// If no KNN responses, generate responses based on noun phrases
+				finalResponse = generateResponseFromNounPhrases(nounPhrases)
+			}
+
 			// Classify user intent
 			intent := classifyIntent(query)
 
@@ -244,9 +388,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				response = "Bot: Goodbye! Have a great day!"
 			case "help":
 				// Get response using KNN for help queries
-				response = handleUserInput(query) // Get response from KNN
+				response = finalResponse // Get response from KNN
 			default:
-				response = handleUserInput(query) // General response fallback
+				response = finalResponse // General response fallback
 			}
 
 			// Send the response back to the client
