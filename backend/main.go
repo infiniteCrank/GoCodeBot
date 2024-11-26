@@ -59,10 +59,17 @@ type Feedback struct {
 	Rating   int    `json:"rating"`
 }
 
+type KeywordEntity struct {
+	Name        string
+	Description string
+	Category    string
+}
+
 var (
-	corpus   []string
-	keywords map[string]float64
-	tfidf    *TFIDF
+	corpus              []string
+	corpusKeywords      map[string]float64
+	tfidf               *TFIDF
+	programmingKeywords map[string]KeywordEntity
 )
 
 func initialize() {
@@ -71,11 +78,17 @@ func initialize() {
 
 	connectDatabase()
 
+	// Load programming keywords
+	err := loadProgrammingKeywords("Go_keyword_entities.txt")
+	if err != nil {
+		log.Fatal("Error loading programming keywords:", err)
+	}
+
 	// Load any existing discovered intents from the database
 	loadDiscoveredIntents()
 
 	// Load programming concepts from the corpus
-	err := loadCorpusConcepts("go_corpus.md")
+	err = loadCorpusConcepts("go_corpus.md")
 	if err != nil {
 		log.Fatal("Error loading corpus concepts:", err)
 	}
@@ -90,10 +103,55 @@ func initialize() {
 	tfidf = NewTFIDF(corpus)
 
 	// Extract keywords from the corpus
-	keywords = tfidf.ExtractKeywords(corpus, 20) // Adjust top N as necessary
+	corpusKeywords = tfidf.ExtractKeywords(corpus, 20) // Adjust top N as necessary
 
 	// Dynamically initialize programming terms from the corpus
 	initializeProgrammingTerms(corpus)
+}
+
+func loadProgrammingKeywords(filename string) error {
+	programmingKeywords = make(map[string]KeywordEntity)
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	currentCategory := ""
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Ignore empty lines
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		// Check for keyword categories
+		if strings.HasPrefix(line, "Control Flow Keywords") ||
+			strings.HasPrefix(line, "Function and Variable Keywords") ||
+			strings.HasPrefix(line, "Data Structure Keywords") {
+			currentCategory = line
+			continue
+		}
+
+		// Each keyword line format: keyword - description
+		if strings.Contains(line, "-") {
+			parts := strings.SplitN(line, "-", 2)
+			if len(parts) == 2 {
+				keyword := strings.TrimSpace(parts[0])
+				description := strings.TrimSpace(parts[1])
+				programmingKeywords[keyword] = KeywordEntity{
+					Name:        keyword,
+					Description: description,
+					Category:    currentCategory,
+				}
+			}
+		}
+	}
+
+	return scanner.Err()
 }
 
 func main() {
@@ -141,10 +199,18 @@ func extractProgrammingTerms(text string) []string {
 	var terms []string
 
 	// Use regex to find capitalized words or common programming patterns
-	re := regexp.MustCompile(`\b([A-Z][a-zA-Z]*)\b`) // Match capitalized words (likely class names, etc.)
+	re := regexp.MustCompile(`\b([A-Z][a-zA-Z0-9]*)\b`) // Match capitalized words (likely class names, etc.)
 	matches := re.FindAllString(text, -1)
 
+	// Add regex matches to terms
 	terms = append(terms, matches...)
+
+	// Add programming keywords from the map
+	for keyword := range programmingKeywords {
+		if strings.Contains(text, keyword) {
+			terms = append(terms, keyword) // Add keyword if found in text
+		}
+	}
 
 	return terms
 }
@@ -310,7 +376,7 @@ func handleUserInput(query string) string {
 	response := KNN(queryVec, dataset, 3) // Adjust k as needed
 	// Check if the query contains any extracted keywords
 	var relatedKeywords []string
-	for term := range keywords {
+	for term := range corpusKeywords {
 		if strings.Contains(strings.ToLower(query), term) {
 			relatedKeywords = append(relatedKeywords, term)
 		}
