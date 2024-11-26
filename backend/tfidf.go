@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"math"
+	"sort"
 	"strings"
 )
 
@@ -73,44 +74,6 @@ func (tfidf *TFIDF) CalculateVector(doc string) map[string]float64 {
 	}
 
 	return vector // Return the computed TF-IDF vector
-}
-
-// removeStopWords filters out stop words from the given list of words.
-func removeStopWords(words []string) []string {
-	filtered := []string{} // Initialize slice to store filtered words
-	for _, word := range words {
-		_, found := stopWords[word] // Check if the word is a stop word
-		if !found {
-			filtered = append(filtered, word) // Append non-stop words to the filtered slice
-		}
-	}
-	return filtered // Return the filtered list of words
-}
-
-// stem applies basic stemming to a given word using rule-based techniques.
-func stem(word string) string {
-	// Basic stemming rules (not exhaustive)
-	if strings.HasSuffix(word, "ing") {
-		return strings.TrimSuffix(word, "ing") // Remove "ing"
-	} else if strings.HasSuffix(word, "ed") {
-		return strings.TrimSuffix(word, "ed") // Remove "ed"
-	} else if strings.HasSuffix(word, "s") {
-		return strings.TrimSuffix(word, "s") // Remove "s"
-	}
-	return word // Return the original word if no rules apply
-}
-
-// removeStopWordsAndStem processes a list of words, removing stop words and applying stemming.
-func removeStopWordsAndStem(words []string) []string {
-	filtered := []string{} // Initialize slice to hold filtered and stemmed words
-	for _, word := range words {
-		_, found := stopWords[word] // Check if it's a stop word
-		if !found {
-			stemmedWord := stem(word)                // Stem the word
-			filtered = append(filtered, stemmedWord) // Add to filtered list
-		}
-	}
-	return filtered // Return the list of filtered and stemmed words
 }
 
 // saveTrainingDataToDB stores training data in the database.
@@ -231,4 +194,83 @@ func processWords(words []string) []string {
 	}
 
 	return filtered // Return the final list of processed words
+}
+
+// Keyword extraction function
+func (tfidf *TFIDF) ExtractKeywords(corpus []string, topN int) map[string]float64 {
+	idf := calculateInverseDocumentFrequency(corpus)
+	tf := make(map[string]float64)
+
+	// Calculate TF-IDF for each document
+	for _, doc := range corpus {
+		docTF := calculateTermFrequency(doc)
+		for term, freq := range docTF {
+			tf[term] += freq * idf[term] // Accumulate TF-IDF score
+		}
+	}
+
+	// Sort terms by TF-IDF score
+	type kv struct {
+		Key   string
+		Value float64
+	}
+
+	var sortedTerms []kv
+	for k, v := range tf {
+		sortedTerms = append(sortedTerms, kv{Key: k, Value: v})
+	}
+
+	// Sort by value (TF-IDF score)
+	sort.Slice(sortedTerms, func(i, j int) bool {
+		return sortedTerms[i].Value > sortedTerms[j].Value
+	})
+
+	// Create a map for the top N keywords
+	topKeywords := make(map[string]float64)
+	for i := 0; i < topN && i < len(sortedTerms); i++ {
+		topKeywords[sortedTerms[i].Key] = sortedTerms[i].Value
+	}
+
+	return topKeywords
+}
+
+// Calculate term frequency (TF) for a given document
+func calculateTermFrequency(doc string) map[string]float64 {
+	terms := strings.Fields(doc)
+	tf := make(map[string]float64)
+	totalTerms := float64(len(terms))
+
+	for _, term := range terms {
+		term = strings.ToLower(term) // Normalize to lowercase
+		if _, exists := stopWords[term]; !exists {
+			tf[term]++ // Count occurrences
+		}
+	}
+
+	// Normalize term frequencies
+	for term := range tf {
+		tf[term] /= totalTerms // Divide by total terms to get frequency
+	}
+	return tf
+}
+
+// Calculate inverse document frequency (IDF)
+func calculateInverseDocumentFrequency(corpus []string) map[string]float64 {
+	idf := make(map[string]float64)
+	docCount := float64(len(corpus))
+
+	termDocCount := make(map[string]int)
+	for _, doc := range corpus {
+		docTF := calculateTermFrequency(doc)
+		for term := range docTF {
+			termDocCount[term]++ // Count how many documents contain the term
+		}
+	}
+
+	// Calculate IDF
+	for term, count := range termDocCount {
+		idf[term] = math.Log(docCount / (1 + float64(count))) // Add 1 to avoid division by zero
+	}
+
+	return idf
 }

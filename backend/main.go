@@ -59,8 +59,13 @@ type Feedback struct {
 	Rating   int    `json:"rating"`
 }
 
-func main() {
+var (
+	corpus   []string
+	keywords map[string]float64
+	tfidf    *TFIDF
+)
 
+func initialize() {
 	// Initialize discovered intents
 	discoveredIntents = make(map[string][]string)
 
@@ -70,16 +75,31 @@ func main() {
 	loadDiscoveredIntents()
 
 	// Load programming concepts from the corpus
-	loadCorpusConcepts("go_corpus.md")
+	err := loadCorpusConcepts("go_corpus.md")
+	if err != nil {
+		log.Fatal("Error loading corpus concepts:", err)
+	}
 
 	// Load the existing corpus of training phrases
-	corpus, err := LoadCorpus("go_corpus.md")
+	corpus, err = LoadCorpus("go_corpus.md")
 	if err != nil {
 		log.Fatal("Error loading corpus:", err)
 	}
 
+	// Create the TF-IDF model
+	tfidf = NewTFIDF(corpus)
+
+	// Extract keywords from the corpus
+	keywords = tfidf.ExtractKeywords(corpus, 20) // Adjust top N as necessary
+
 	// Dynamically initialize programming terms from the corpus
 	initializeProgrammingTerms(corpus)
+}
+
+func main() {
+
+	// init the corpus and supporting data
+	initialize()
 
 	// Start the validation loop for new intents
 	go func() {
@@ -278,18 +298,30 @@ func loadDiscoveredIntents() {
 }
 
 func handleUserInput(query string) string {
-	// Load the expanded corpus
-	corpus, err := LoadCorpus("go_corpus.md")
-	if err != nil {
-		log.Fatal("Error loading corpus:", err)
+
+	// Initialize on the first user input if not already done
+	if corpus == nil {
+		initialize()
 	}
-	// Assuming dataset is loaded/predefined
-	// Create the TF-IDF model and calculate the query vector
-	tfidf := NewTFIDF(corpus) // Implement loadCorpus to retrieve your documents
+
 	queryVec := tfidf.CalculateVector(query)
 
 	// Get response using KNN
-	return KNN(queryVec, dataset, 3) // Adjust k as needed
+	response := KNN(queryVec, dataset, 3) // Adjust k as needed
+	// Check if the query contains any extracted keywords
+	var relatedKeywords []string
+	for term := range keywords {
+		if strings.Contains(strings.ToLower(query), term) {
+			relatedKeywords = append(relatedKeywords, term)
+		}
+	}
+
+	// Enhance the response with related topics
+	if len(relatedKeywords) > 0 {
+		response += "\n\nRelated Keywords: " + strings.Join(relatedKeywords, ", ")
+	}
+
+	return response // Return the final response
 }
 
 // LoadCorpus loads the corpus from a text file and returns a slice of strings.
@@ -492,9 +524,7 @@ func classifyIntent(query string) string {
 		corpus = append(corpus, intent.TrainingPhrases...)
 	}
 
-	// Calculate TF-IDF for input query
-	tf := NewTFIDF(corpus)
-	queryVec := tf.CalculateVector(preprocessedQuery)
+	queryVec := tfidf.CalculateVector(preprocessedQuery)
 
 	bestIntent := ""
 	highestSimilarity := -1.0
@@ -502,7 +532,7 @@ func classifyIntent(query string) string {
 	// Classify query against intents
 	for _, intent := range intents {
 		for _, phrase := range intent.TrainingPhrases {
-			phraseVec := tf.CalculateVector(phrase)             // Calculate vector for the training phrase
+			phraseVec := tfidf.CalculateVector(phrase)          // Calculate vector for the training phrase
 			similarity := cosineSimilarity(queryVec, phraseVec) // Compute cosine similarity
 
 			// Check for the best intent based on similarity

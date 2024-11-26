@@ -1,0 +1,72 @@
+Keywords
+Control Flow Keywords
+
+if - Conditional statement.
+else - Fallback option for if statements.
+switch - Multi-way branch.
+case - Branch condition for switch statements.
+default - Default case in switch.
+for - Looping construct.
+break - Exits from loop or switch.
+continue - Skips to next iteration of loop.
+goto - Jumps to a labeled statement.
+Function and Variable Keywords
+
+func - Function declaration.
+return - Exits a function and returns a value.
+var - Declares a variable.
+const - Declares a constant.
+type - Defines a new type.
+defer - Defers function execution until the surrounding function returns.
+go - Starts a new goroutine.
+select - Waits on multiple channel operations.
+Data Structure Keywords
+
+chan - Channel declaration for communication.
+map - Declares a map type.
+struct - Defines a structure.
+interface - Defines a contract that types must fulfill.
+Data Types
+Standard Types
+
+int - Signed integer.
+uint - Unsigned integer.
+float32, float64 - Floating-point numbers.
+string - Sequence of characters.
+bool - Boolean value (true or false).
+Composite Types
+
+slice - Represents a dynamic array.
+array - Fixed-size sequential collection.
+map - Collection of key-value pairs.
+struct - Group of fields.
+interface - Set of method signatures.
+Type Aliases
+
+byte - Alias for uint8.
+rune - Alias for int32 (Unicode code point).
+Built-in Functions
+len() - Returns the length of an array, slice, map, or string.
+cap() - Returns the capacity of a slice.
+make() - Allocates and initializes slices, maps, or channels.
+new() - Allocates memory for a variable of a specified type.
+append() - Adds elements to a slice.
+panic() - Triggers a run-time error.
+recover() - Regains control of a panicking goroutine.
+Concurrency Concepts
+goroutine - A lightweight thread managed by the Go runtime.
+channel - A conduit for sending and receiving messages between goroutines.
+sync - Package for synchronizing access to variables between goroutines.
+Error Handling
+error - A built-in interface for handling errors.
+defer, panic, and recover - Mechanisms for error handling and managing control flow.
+Packages and Imports
+package - Defines a namespace for Go files.
+import - Brings in external packages to use their functionality.
+Common Standard Library Packages (Entities)
+fmt - Implements formatted I/O.
+net/http - Provides HTTP client and server functionality.
+os - Provides platform-independent interface to operating system functionality.
+strings - Contains functions to manipulate UTF-8 encoded strings.
+strconv - Implements conversions to and from string representations of basic data types.
+time - Provides functionality for measuring and displaying time.
