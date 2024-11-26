@@ -107,6 +107,9 @@ func initialize() {
 
 	// Dynamically initialize programming terms from the corpus
 	initializeProgrammingTerms(corpus)
+
+	// Extract new intents from phrases in the corpus
+	extractNewIntentsFromCorpus(corpus)
 }
 
 func loadProgrammingKeywords(filename string) error {
@@ -180,6 +183,24 @@ func main() {
 
 	log.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func extractNewIntentsFromCorpus(corpus []string) {
+	for _, line := range corpus {
+		for keyword, entity := range programmingKeywords {
+			if strings.Contains(line, keyword) {
+				// Create new intents for each keyword found in the line
+				discoveredIntents[entity.Name] = append(discoveredIntents[entity.Name], line)
+			}
+		}
+	}
+
+	// Adding discovered intents to intents array if they meet the threshold
+	for intentName, phrases := range discoveredIntents {
+		if len(phrases) >= exampleThreshold { // Only create intents with enough training data
+			intents = append(intents, Intent{Name: intentName, TrainingPhrases: phrases})
+		}
+	}
 }
 
 // Function to initialize programming terms dynamically from the corpus

@@ -6,7 +6,7 @@ Go is an open-source programming language developed by Google. It is designed fo
 
 - **Static Typing**: Strong and explicit variable types that improve error detection at compile time.
 - **Garbage Collection**: Automatic memory management that helps prevent memory leaks.
-- **Concurrency**: Built-in support for concurrent programming with goroutines and channels.
+- **Concurrency**: Built-in support for concurrent programming with go-routines and channels.
 
 ## Effective Go
 
@@ -78,18 +78,18 @@ A package is a way to group related Go files together, improving organization an
 
 ## Concurrency
 
-Concurrency is one of Go's standout features, allowing multiple tasks to progress at once. Key constructs include goroutines and channels.
+Concurrency is one of Go's standout features, allowing multiple tasks to progress at once. Key constructs include go-routines and channels.
 
-### Goroutines
+### Go-routines
 
-- Start a new goroutine with the `go` keyword:
+- Start a new go-routine with the `go` keyword:
   ```go
   go myFunction()
   ```
 
 ### Channels
 
-- Channels are used to synchronize and communicate between goroutines:
+- Channels are used to synchronize and communicate between go-routines:
   ```go
   ch := make(chan int)
   go func() {
@@ -180,10 +180,10 @@ Go provides great support for database interactions through the database/sql pac
 
   ````import (
       "database/sql"
-      _ "github.com/go-sql-driver/mysql" // MySQL driver
+      _ "GitHub.com/go-sql-driver/mysql" // MySQL driver
   )
 
-  db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3306)/mydb")
+  db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3306)/myDb")
   if err != nil {
       log.Fatal(err)
   }
@@ -315,7 +315,7 @@ Go's standard library includes powerful packages that extend functionality acros
 
 ### Sync Package
 
-- Provides synchronization primitives such as mutexes and wait groups:
+- Provides synchronization primitives such as mutex's and wait groups:
 
   ```
   import "sync"
@@ -360,7 +360,7 @@ Go's standard library includes powerful packages that extend functionality acros
 
 ### Context Package
 
-- Provides a way to pass deadlines, cancelation signals, and request-scoped values across API boundaries and goroutines.
+- Provides a way to pass deadlines, cancellation signals, and request-scoped values across API boundaries and go-routines.
 
   ```
   import "context"
@@ -579,7 +579,7 @@ Go programming has several idioms that developers use to improve clarity and mai
 
 ### Using WaitGroups for Synchronization
 
-- The `sync.WaitGroup` allows you to wait for a group of goroutines to finish executing:
+- The `sync.WaitGroup` allows you to wait for a group of go-routines to finish executing:
   ```
   var wg sync.WaitGroup
   wg.Add(1)
@@ -619,9 +619,9 @@ Go programming has several idioms that developers use to improve clarity and mai
 
 Proper resource management in Go is vital for writing efficient and bug-free applications.
 
-### Managing Goroutines
+### Managing Go-routines
 
-- Ensure goroutines terminate when they're no longer needed. Use channels to signal when to stop:
+- Ensure go-routines terminate when they're no longer needed. Use channels to signal when to stop:
   ```go
   done := make(chan struct{})
   go func() {
