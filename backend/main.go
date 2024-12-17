@@ -580,10 +580,11 @@ func min(a, b int) int {
 func validateNewIntents() {
 	for intentKey, queries := range discoveredIntents {
 		if len(queries) >= exampleThreshold { // Set a threshold for how many examples define a new intent
-			log.Println("New Intent Discovered:", intentKey, "with queries:", queries)
+			//log.Println("New Intent Discovered:", intentKey, "with queries:", queries)
 
 			// Automatically create the new intent with existing phrases
 			newIntent := Intent{Name: intentKey, TrainingPhrases: queries}
+			// TODO: we need to chack and see if the intent exists already before we add it again
 			intents = append(intents, newIntent) // Add the new intent to the intent
 			// Persist the new intent to the database
 			persistDiscoveredIntent(intentKey, strings.Join(queries, ";"))

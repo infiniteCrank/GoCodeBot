@@ -35,6 +35,8 @@ CREATE TABLE discovered_intents (
     intent_name VARCHAR(255) NOT NULL UNIQUE,
     training_phrases TEXT NOT NULL
 );
+
+GRANT SELECT, INSERT, UPDATE ON gobotdb.* TO 'gobot'@'localhost';
 ```
 
 
