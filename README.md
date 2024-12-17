@@ -2,23 +2,18 @@
 
 this is an AI chat bot that uses NLP and machine learning to teach people how to write code in GoLang
 
+### DB Setup
 ```
+CREATE USER 'gobot'@'localhost' IDENTIFIED BY 'somepassword!';
+CREATE DATABASE gobotdb;
+USE gobotdb;
 CREATE TABLE interactions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     query VARCHAR(255) NOT NULL,
     response TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-```
 
-Run the Go Server:
-Navigate to the /backend folder, and start the server with:
-
-```
-go run main.go database.go knn.go tfidf.go
-```
-
-```
 CREATE TABLE feedback (
     id INT AUTO_INCREMENT PRIMARY KEY,
     query VARCHAR(255) NOT NULL,
@@ -26,9 +21,7 @@ CREATE TABLE feedback (
     rating INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-```
 
-```
 CREATE TABLE interaction_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     query VARCHAR(255) NOT NULL,
@@ -36,14 +29,20 @@ CREATE TABLE interaction_logs (
     feedback_rating INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-```
 
-```
 CREATE TABLE discovered_intents (
     id INT AUTO_INCREMENT PRIMARY KEY,
     intent_name VARCHAR(255) NOT NULL UNIQUE,
     training_phrases TEXT NOT NULL
 );
+```
+
+
+### Run the Go Server:
+Navigate to the /backend folder, and start the server with:
+
+```
+go run main.go database.go knn.go tfidf.go
 ```
 
 # GoLang Bot
