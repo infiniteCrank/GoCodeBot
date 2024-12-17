@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"os"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -10,9 +11,17 @@ import (
 // Database connection variable.
 var db *sql.DB
 
+type Config struct {
+	DatabaseURL string `json:"database_url"`
+	Port        int    `json:"port"`
+}
+
 func connectDatabase() {
+
+	ReadJsonConfigToEnvVars("../config/db.json")
+	dbUrl := os.Getenv("DB_URL")
 	var err error
-	db, err = sql.Open("mysql", "user:password@tcp(127.0.0.1:3306)/yourdatabase")
+	db, err = sql.Open("mysql", dbUrl)
 	if err != nil {
 		log.Fatal(err)
 	}
