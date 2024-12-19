@@ -9,9 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
@@ -157,32 +155,58 @@ func loadProgrammingKeywords(filename string) error {
 	return scanner.Err()
 }
 
+// Server holds all lobbies.
+type Server struct {
+	upgrader websocket.Upgrader
+}
+
+// Initialize a new server.
+func newServer() *Server {
+	return &Server{
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				return true // Allow all connections for simplicity
+			},
+		},
+	}
+}
 func main() {
 
 	// init the corpus and supporting data
 	initialize()
 
 	// Start the validation loop for new intents
-	go func() {
-		for range time.Tick(time.Minute) { // Check every minute
-			validateNewIntents()
-		}
-	}()
+	// go func() {
+	// 	for range time.Tick(time.Minute) { // Check every minute
+	// 		validateNewIntents()
+	// 	}
+	// }()
 
 	// Set up a Go routine that runs at defined intervals to retrain based on feedback
-	go func() {
-		for range time.Tick(time.Hour) { // Adjust to your preferred interval
-			retrainModelBasedOnFeedback()
-		}
-	}()
+	// go func() {
+	// 	for range time.Tick(time.Hour) { // Adjust to your preferred interval
+	// 		retrainModelBasedOnFeedback()
+	// 	}
+	// }()
 
-	router := mux.NewRouter()
-	router.HandleFunc("/ws", handleWebSocket)
-	router.HandleFunc("/train", handleTraining).Methods("POST")
-	http.Handle("/", http.FileServer(http.Dir("./frontend"))) // Serve static files
+	server := newServer()
+
+	// Handle WebSocket connections
+	http.HandleFunc("/ws", server.handleWebSocket)
+
+	// Serve static files
+	http.Handle("/", http.FileServer(http.Dir("../frontend")))
+
+	// Handle training requests
+	http.HandleFunc("/train", server.handleTraining) // Use HandleFunc for POST method checking
 
 	log.Println("Server started on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	err := http.ListenAndServe(":8080", nil) // Start listening on port 8080
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err) // Log any errors starting the server
+	}
 }
 
 func extractNewIntentsFromCorpus(corpus []string) {
@@ -432,8 +456,13 @@ func LoadCorpus(filename string) ([]string, error) {
 	return corpus, nil
 }
 
-// Function to handle new training data
-func handleTraining(w http.ResponseWriter, r *http.Request) {
+// HandleTraining manages the training logic.
+func (s *Server) handleTraining(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
 	var data TrainingData
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -448,7 +477,7 @@ func handleTraining(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handle the websocket interaction for user queries
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+func (s Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Error during connection upgrade:", err)
@@ -522,6 +551,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			saveInteraction(query, response) // Log the interaction with query and response.
 
 		case "feedback":
+			// TODO: there is a type bug here with float 64
 			feedback := Feedback{
 				Query:    msg["query"].(string),
 				Response: msg["response"].(string),
