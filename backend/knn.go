@@ -13,6 +13,8 @@ type DataPoint struct {
 	Intent string             // The identified intent of the data point (optional)
 }
 
+var dataset []DataPoint
+
 // EuclideanDistance calculates the Euclidean distance between two vectors.
 func EuclideanDistance(vec1, vec2 map[string]float64) float64 {
 	var sum float64

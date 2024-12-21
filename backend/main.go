@@ -43,8 +43,6 @@ var intents = []Intent{
 	// Add more intents as needed...
 }
 
-var dataset []DataPoint
-
 // Handle new training data
 type TrainingData struct {
 	Query  string `json:"query"`
@@ -99,6 +97,19 @@ func initialize() {
 
 	// Create the TF-IDF model
 	tfidf = NewTFIDF(corpus)
+
+	// Declare a map to store the TF-IDF vectors
+	vectors := make(map[string]float64)
+
+	// Calculate and store TF-IDF vectors for each document
+	for _, doc := range corpus {
+		vector := tfidf.CalculateVector(doc)
+
+		// Store the vectors in the map
+		for word, value := range vector {
+			vectors[word] = value // Store each word and its corresponding TF-IDF value
+		}
+	}
 
 	// Extract keywords from the corpus
 	corpusKeywords = tfidf.ExtractKeywords(corpus, 20) // Adjust top N as necessary
@@ -417,6 +428,7 @@ func handleUserInput(query string) string {
 
 	queryVec := tfidf.CalculateVector(query)
 
+	// TODO: this data set is empty I think we need to calulate vectors for the corpus
 	// Get response using KNN
 	response := KNN(queryVec, dataset, 3) // Adjust k as needed
 	// Check if the query contains any extracted keywords
